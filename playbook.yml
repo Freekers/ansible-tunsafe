@@ -286,9 +286,11 @@
   # Ansible UFW module does not support 'out' interface yet at time of writing, hence using command module.
   - name: Allow TunSafe routing from tun0 to default IPv4 interface
     when: ufw == "true"
+    become: true
     command: ufw route allow in on tun0 out on {{ ansible_default_ipv4.interface }}
  
   - name: Allow TunSafe routing from tun0 to default IPv6 interface
+    become: true
     when: 
       - ufw == "true"
       - ansible_default_ipv6.address | length > 0
