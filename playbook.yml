@@ -1,0 +1,331 @@
+#THIS FILE DOES NOT NEED TO BE CHANGED
+#UPDATE THE HOSTS FILE TO REFLECT YOUR SETUP
+
+- hosts: tunsafe
+  tasks:
+
+# Prereqs
+  - name: Check if chosen UDP port is available
+    become: true
+    wait_for:
+      port: '{{ udp }}'
+      timeout: 3
+      state: stopped
+      msg: "Chosen UDP port {{ udp }} is already in use! Aborting"
+
+  - name: Check if chosen TCP port is available
+    become: true
+    wait_for:
+      port: '{{ tcp }}'
+      timeout: 3
+      state: stopped
+      msg: "Chosen TCP port {{ tcp }} is already in use! Aborting"
+
+# Let's go!  
+  - name: Update and upgrade apt packages
+    become: true
+    apt:
+       update_cache: yes
+       upgrade: yes
+
+  - name: Install Required Packages
+    become: true
+    when: ufw == "false"
+    apt:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - git
+      - clang-6.0
+      - make
+
+  - name: Install Required Packages with UFW
+    become: true
+    when: ufw == "true"
+    apt:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - git
+      - ufw
+      - clang-6.0
+      - make
+
+  - name: Clone TunSafe git
+    become: true
+    git:
+      repo: https://github.com/TunSafe/TunSafe.git
+      dest: /opt/tunsafe
+      force: yes
+
+  - name: Build TunSafe
+    become: true
+    make:
+      chdir: /opt/tunsafe
+
+  - name: Install TunSafe
+    become: true
+    make:
+      chdir: /opt/tunsafe
+      target: install
+
+  - name: Enable IPv4 Forwarding
+    become: true
+    sysctl:
+      name: net.ipv4.ip_forward
+      value: '1'
+      sysctl_set: yes
+      state: present
+      reload: yes
+
+  - name: Enable IPv6 Forwarding
+    become: true
+    when: ansible_default_ipv6.address | length > 0
+    sysctl:
+      name: net.ipv6.conf.all.forwarding
+      value: '1'
+      sysctl_set: yes
+      state: present
+      reload: yes
+
+#Populate server config
+  - name: Copy TunSafe Conf template
+    become: true
+    copy:
+      src: TunSafe.conf
+      dest: /opt/tunsafe/TunSafe.conf
+
+  - name: Add IPv4 and IPv6 range to TunSafe Conf
+    become: true
+    when: ansible_default_ipv6.address | length > 0
+    lineinfile:
+      dest: /opt/tunsafe/TunSafe.conf
+      line: 'Address = 10.100.100.1/24,fd42:42:42::1/64'
+      insertafter: 'Interface'
+
+  - name: Add IPv4 range to TunSafe Conf
+    become: true
+    when: ansible_default_ipv6.address | length == 0
+    lineinfile:
+      dest: /opt/tunsafe/TunSafe.conf
+      line: 'Address = 10.100.100.1/24'
+      insertafter: 'Interface'
+
+  - name: Generate Privkey for Server
+    command: tunsafe genkey
+    register: privkey_server
+
+  - name: Generate Pubkey for Server
+    shell: echo "{{ privkey_server.stdout }}" | tunsafe pubkey
+    register: pubkey_server
+
+  - name: Add Privatekey and Listenports to TunSafe conf
+    become: true
+    blockinfile:
+      path: /opt/tunsafe/TunSafe.conf
+      marker: "# {mark} ANSIBLE MANAGED BLOCK 1"
+      block: |
+        PrivateKey = {{ privkey_server.stdout }}
+        ListenPort = {{ udp }}
+        ListenPortTCP = {{ tcp }}
+      insertafter: 'ObfuscateKey'
+
+  - name: Add Postup and Preup commands to TunSafe conf with dynamic IPv4 and IPv6 interface
+    become: true
+    when: ansible_default_ipv6.address | length > 0
+    blockinfile:
+      path: /opt/tunsafe/TunSafe.conf
+      marker: "# {mark} ANSIBLE MANAGED BLOCK 2"
+      block: |
+        PostUp = iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE; ip6tables -t nat -A POSTROUTING -o {{ ansible_default_ipv6.interface }} -j MASQUERADE
+        PostDown = iptables -t nat -D POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE; ip6tables -t nat -D POSTROUTING -o {{ ansible_default_ipv6.interface }} -j MASQUERADE
+      insertafter: 'ObfuscateTCP'
+
+  - name: Add Postup and Preup commands to TunSafe conf with dynamic IPv4 interface
+    become: true
+    when: ansible_default_ipv6.address | length == 0
+    blockinfile:
+      path: /opt/tunsafe/TunSafe.conf
+      marker: "# {mark} ANSIBLE MANAGED BLOCK 2"
+      block: |
+        PostUp = iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+        PostDown = iptables -t nat -D POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+      insertafter: 'ObfuscateTCP'
+
+#Note: TAP is not compatible CIDR /31 or /32, hence using /24 for IPv4
+#Note: IPv6 /127 or /128 are not supported, hence using /120 for IPv6
+  - name: Add IPv4 and IPv6 range for initial client to TunSafe Conf
+    become: true
+    when: ansible_default_ipv6.address | length > 0
+    lineinfile:
+      dest: /opt/tunsafe/TunSafe.conf
+      line: 'AllowedIPs = 10.100.100.2/24,fd42:42:42::2/120'
+      insertafter: 'Peer'
+
+  - name: Add IPv4 range for initial client to TunSafe Conf
+    become: true
+    when: ansible_default_ipv6.address | length == 0
+    lineinfile:
+      dest: /opt/tunsafe/TunSafe.conf
+      line: 'AllowedIPs = 10.100.100.2/24'
+      insertafter: 'Peer'
+
+  - name: Generate Privkey for initial Client
+    command: tunsafe genkey
+    register: privkey_client
+
+  - name: Generate Pubkey for initial Client
+    shell: echo "{{ privkey_client.stdout }}" | tunsafe pubkey
+    register: pubkey_client
+
+  - name: Add Pubkey for Initial Client to TunSafe Conf
+    become: true
+    lineinfile:
+      dest: /opt/tunsafe/TunSafe.conf
+      line: 'PublicKey = {{ pubkey_client.stdout }}'
+      insertafter: 'Peer'
+
+  - name: Generate PresharedKey for initial Client
+    command: tunsafe genpsk
+    register: psk
+
+  - name: Add PresharedKey for Initial Client to TunSafe Conf
+    become: true
+    lineinfile:
+      dest: /opt/tunsafe/TunSafe.conf
+      line: 'PresharedKey = {{ psk.stdout }}'
+      insertafter: 'Peer'
+
+#Populate client configs
+  - name: Copy TCP Client Conf template
+    copy:
+      src: TCP_client.conf
+      dest: '{{ ansible_user_dir }}/TCP_client.conf'
+
+  - name: Add IPv4 and IPv6 address to TCP Client conf
+    when: ansible_default_ipv6.address | length > 0
+    lineinfile:
+      dest: '{{ ansible_user_dir }}/TCP_client.conf'
+      line: 'Address = 10.100.100.2/24,fd42:42:42::2/120'
+      insertafter: 'Interface'
+
+  - name: Add IPv4 address to TCP Client conf
+    when: ansible_default_ipv6.address | length == 0
+    lineinfile:
+      dest: '{{ ansible_user_dir }}/TCP_client.conf'
+      line: 'Address = 10.100.100.1/24'
+      insertafter: 'Interface'
+
+  - name: Add Privatekey and DNS to TCP Client conf
+    blockinfile:
+      path: '{{ ansible_user_dir }}/TCP_client.conf'
+      marker: "# {mark} ANSIBLE MANAGED BLOCK 1"
+      block: |
+        PrivateKey = {{ privkey_client.stdout }}
+        DNS = {{ dns }}
+      insertafter: 'ObfuscateKey'
+
+  - name: Add PublicKey, PreSharedKey and EndPoint to TCP Client conf
+    blockinfile:
+      path: '{{ ansible_user_dir }}/TCP_client.conf'
+      marker: "# {mark} ANSIBLE MANAGED BLOCK 2"
+      block: |
+        PublicKey = {{ pubkey_server.stdout }}
+        PresharedKey = {{ psk.stdout }}
+        Endpoint = tcp://{{ ansible_default_ipv4.address }}:{{ tcp }}
+
+  - name: Copy UDP Client Conf template
+    copy:
+      src: UDP_client.conf
+      dest: '{{ ansible_user_dir }}/UDP_client.conf'
+
+  - name: Add IPv4 and IPv6 address to UDP Client conf
+    when: ansible_default_ipv6.address | length > 0
+    lineinfile:
+      dest: '{{ ansible_user_dir }}/UDP_client.conf'
+      line: 'Address = 10.100.100.2/24,fd42:42:42::2/120'
+      insertafter: 'Interface'
+
+  - name: Add IPv4 address to UDP Client conf
+    when: ansible_default_ipv6.address | length == 0
+    lineinfile:
+      dest: '{{ ansible_user_dir }}/UDP_client.conf'
+      line: 'Address = 10.100.100.1/24'
+      insertafter: 'Interface'
+
+  - name: Add Privatekey and DNS to UDP Client conf
+    blockinfile:
+      path: '{{ ansible_user_dir }}/UDP_client.conf'
+      marker: "# {mark} ANSIBLE MANAGED BLOCK 1"
+      block: |
+        PrivateKey = {{ privkey_client.stdout }}
+        DNS = {{ dns }}
+      insertafter: 'ObfuscateKey'
+
+  - name: Add PublicKey, PreSharedKey and EndPoint to UDP Client conf
+    blockinfile:
+      path: '{{ ansible_user_dir }}/UDP_client.conf'
+      marker: "# {mark} ANSIBLE MANAGED BLOCK 2"
+      block: |
+        PublicKey = {{ pubkey_server.stdout }}
+        PresharedKey = {{ psk.stdout }}
+        Endpoint = {{ ansible_default_ipv4.address }}:{{ udp }}
+  
+  - name: Allow services in firewall
+    become: true
+    when: ufw == "true"
+    ufw:
+      rule: allow
+      proto: any
+      port: '{{ item }}'
+    loop:
+      - '22'
+      - '{{ tcp |int }}'
+      - '{{ udp |int }}'
+
+  # Ansible UFW module does not support 'out' interface yet at time of writing, hence using command module.
+  - name: Allow TunSafe routing from tun0 to default IPv4 interface
+    when: ufw == "true"
+    command: ufw route allow in on tun0 out on {{ ansible_default_ipv4.interface }}
+ 
+  - name: Allow TunSafe routing from tun0 to default IPv6 interface
+    when: 
+      - ufw == "true"
+      - ansible_default_ipv6.address | length > 0
+    command: ufw route allow in on tun0 out on {{ ansible_default_ipv6.interface }}
+ 
+  - name: Set default firewall policy and start on boot
+    become: true
+    when: ufw == "true"
+    ufw: 
+      state: enabled
+
+# Deploy & Start service
+  - name: Copy systemd service file to server
+    become: true
+    copy:
+      src: tunsafe.service
+      dest: /etc/systemd/system
+      owner: root
+      group: root
+
+  - name: Start tunsafe service
+    become: true
+    systemd:
+      name: tunsafe
+      state: started
+      enabled: yes
+
+# Pack it up, we're done here.
+  - name: Remove useless packages from the cache
+    become: true
+    apt:
+      autoclean: yes
+      autoremove: yes
+
+  - name: Display post install message
+    debug:
+      msg:
+        - '*** TunSafe Installation Completed Successfully! ***'
+        - '*** Your client configs are located in {{ ansible_user_dir }} ***'
+        - '*** Remember: TunSafe 1.5-RC2 client or later is needed for obfuscation! ***'
