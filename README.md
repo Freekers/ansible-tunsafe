@@ -41,7 +41,7 @@ After installation, copy the TCP & UDP configs to your client. They are located 
 Note that while the syntax between WireGuard and TunSafe is the same, TunSafe and WireGuard clients are not interchangeable because of the obfuscation used in TunSafe. Hence you _need_ to download TunSafe 1.5 RC-2 or later in order to connect to your TunSafe instance.
 
 - For Windows 7 or later: https://tunsafe.com/download
-- For Mac OS X, Linux or FreeBSD: https://tunsafe.com/download
+- For Mac OS X, Linux or FreeBSD: https://tunsafe.com/user-guide/linux
 - For Android: https://tunsafe.com/user-guide/android  
 Note: the version in the Play Store does not support obfuscation. You need to download the experimental APK from the link listed above.
 - For iOS: Not available. The version in the Appstore does not support obfuscation.
