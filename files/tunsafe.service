@@ -6,8 +6,8 @@ After=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=tunsafe start -d /opt/tunsafe/TunSafe.conf
-ExecStop=tunsafe stop tun0
+ExecStart=/opt/tunsafe/tunsafe start -d /opt/tunsafe/TunSafe.conf
+ExecStop=/opt/tunsafe/tunsafe stop tun0
 
 [Install]
 WantedBy=multi-user.target
