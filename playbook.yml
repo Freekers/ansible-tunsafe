@@ -80,7 +80,7 @@
 
   - name: Enable IPv6 Forwarding
     become: true
-    when: ansible_default_ipv6.address | length > 0
+    when: ansible_default_ipv6.address is defined
     sysctl:
       name: net.ipv6.conf.all.forwarding
       value: '1'
@@ -97,7 +97,7 @@
 
   - name: Add IPv4 and IPv6 range to TunSafe Conf
     become: true
-    when: ansible_default_ipv6.address | length > 0
+    when: ansible_default_ipv6.address is defined
     lineinfile:
       dest: /opt/tunsafe/TunSafe.conf
       line: 'Address = 10.100.100.1/24,fd42:42:42::1/64'
@@ -105,7 +105,7 @@
 
   - name: Add IPv4 range to TunSafe Conf
     become: true
-    when: ansible_default_ipv6.address | length == 0
+    when: ansible_default_ipv6.address is not defined
     lineinfile:
       dest: /opt/tunsafe/TunSafe.conf
       line: 'Address = 10.100.100.1/24'
@@ -132,7 +132,7 @@
 
   - name: Add Postup and Preup commands to TunSafe conf with dynamic IPv4 and IPv6 interface
     become: true
-    when: ansible_default_ipv6.address | length > 0
+    when: ansible_default_ipv6.address is defined
     blockinfile:
       path: /opt/tunsafe/TunSafe.conf
       marker: "# {mark} ANSIBLE MANAGED BLOCK 2"
@@ -143,7 +143,7 @@
 
   - name: Add Postup and Preup commands to TunSafe conf with dynamic IPv4 interface
     become: true
-    when: ansible_default_ipv6.address | length == 0
+    when: ansible_default_ipv6.address is not defined
     blockinfile:
       path: /opt/tunsafe/TunSafe.conf
       marker: "# {mark} ANSIBLE MANAGED BLOCK 2"
@@ -156,7 +156,7 @@
 #Note: IPv6 /127 or /128 are not supported, hence using /120 for IPv6
   - name: Add IPv4 and IPv6 range for initial client to TunSafe Conf
     become: true
-    when: ansible_default_ipv6.address | length > 0
+    when: ansible_default_ipv6.address is defined
     lineinfile:
       dest: /opt/tunsafe/TunSafe.conf
       line: 'AllowedIPs = 10.100.100.2/24,fd42:42:42::2/120'
@@ -164,7 +164,7 @@
 
   - name: Add IPv4 range for initial client to TunSafe Conf
     become: true
-    when: ansible_default_ipv6.address | length == 0
+    when: ansible_default_ipv6.address is not defined
     lineinfile:
       dest: /opt/tunsafe/TunSafe.conf
       line: 'AllowedIPs = 10.100.100.2/24'
@@ -203,14 +203,14 @@
       dest: '{{ ansible_user_dir }}/TCP_client.conf'
 
   - name: Add IPv4 and IPv6 address to TCP Client conf
-    when: ansible_default_ipv6.address | length > 0
+    when: ansible_default_ipv6.address is defined
     lineinfile:
       dest: '{{ ansible_user_dir }}/TCP_client.conf'
       line: 'Address = 10.100.100.2/24,fd42:42:42::2/120'
       insertafter: 'Interface'
 
   - name: Add IPv4 address to TCP Client conf
-    when: ansible_default_ipv6.address | length == 0
+    when: ansible_default_ipv6.address is not defined
     lineinfile:
       dest: '{{ ansible_user_dir }}/TCP_client.conf'
       line: 'Address = 10.100.100.1/24'
@@ -240,14 +240,14 @@
       dest: '{{ ansible_user_dir }}/UDP_client.conf'
 
   - name: Add IPv4 and IPv6 address to UDP Client conf
-    when: ansible_default_ipv6.address | length > 0
+    when: ansible_default_ipv6.address is defined
     lineinfile:
       dest: '{{ ansible_user_dir }}/UDP_client.conf'
       line: 'Address = 10.100.100.2/24,fd42:42:42::2/120'
       insertafter: 'Interface'
 
   - name: Add IPv4 address to UDP Client conf
-    when: ansible_default_ipv6.address | length == 0
+    when: ansible_default_ipv6.address is not defined
     lineinfile:
       dest: '{{ ansible_user_dir }}/UDP_client.conf'
       line: 'Address = 10.100.100.1/24'
@@ -293,7 +293,7 @@
     become: true
     when: 
       - ufw == "true"
-      - ansible_default_ipv6.address | length > 0
+      - ansible_default_ipv6.address is defined
     command: ufw route allow in on tun0 out on {{ ansible_default_ipv6.interface }}
  
   - name: Set default firewall policy and start on boot
