@@ -28,12 +28,6 @@ Supported distros:
 - Debian 9
 - Debian 10
 
-Supported virtualization architectures:
-- OpenVZ
-- KVM
-- Xen
-- LXC
-
 ## Usage instructions
 
 After installation, copy the TCP & UDP configs to your client. They are located in the `home` directory of the `ansible_user` as indicated in the post install message.
